@@ -43,6 +43,7 @@ defaults = {
     doHP = true,
     doAA = true,
     doAlarm = true,
+    doItem = true,
     doFizzle = true,
     volFizzle = 25,
     volAlarm = 25,
@@ -51,6 +52,7 @@ defaults = {
     volBonk = 5,
     volLvl = 100,
     volDie = 100,
+    volItem = 100,
     volHP = 20,
     lowHP = 50,
     theme = 'default',
@@ -65,7 +67,8 @@ defaults = {
             soundDie = {file = "Die.wav", duration = 4},
             soundLowHp = {file = "lowHP.wav", duration = 3},
             soundAA = {file = "AA.wav", duration = 2},
-            soundFizzle = {file = 'Fizzle.wav', duration = 1}
+            soundFizzle = {file = 'Fizzle.wav', duration = 1},
+            soundItem = {file = 'Hit.wav', duration = 2}
         }
     }
 }
@@ -140,7 +143,7 @@ local function checkAlarms()
 end
 
 local function eventItem(line)
-    eventSound('', 'Lvl', settings.volLvl)
+    eventSound('', 'Item', settings.volItem)
 end
 
 -- Settings
@@ -161,6 +164,12 @@ local function loadSettings()
     for k, v in pairs(defaults) do
         if settings[k] == nil then
             settings[k] = v
+            newSetting = true
+        end
+    end
+    for k, v in pairs(defaults.Sounds.default) do
+        if settings.Sounds[settings.theme][k] == nil then
+            settings.Sounds[settings.theme][k] = v
             newSetting = true
         end
     end
@@ -368,6 +377,10 @@ local function Config_GUI(open)
     local tmpDoHP = settings.doHP or false
     local tmpLowHp = settings.lowHP or 50
     local tmpPulse = settings.Pulse or 1
+    local tmpDoItem = settings.doItem or false
+    local tmpSndItem = settings.Sounds[settings.theme].soundItem.file or 'Hit.wav'
+    local tmpVolItem = settings.volItem or 100
+    local tmpDurItem = settings.Sounds[settings.theme].soundItem.duration or 2
 
     if ImGui.BeginTable('Settings_Table##'..script, 5, ImGuiTableFlags.None) then
         ImGui.TableSetupColumn('##Toggle_'..script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
@@ -636,6 +649,40 @@ local function Config_GUI(open)
             playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundLowHp.file))
             mq.pickle(configFile, settings)
         end
+
+        --- Item Alerts ---
+        ImGui.TableNextRow()
+        ImGui.TableNextColumn()
+        tmpDoItem = ImGui.Checkbox('Item Alert##'..script, tmpDoItem)
+        if settings.doItem ~= tmpDoItem then
+            settings.doItem = tmpDoItem
+        end
+        ImGui.TableNextColumn()
+        ImGui.SetNextItemWidth(70)
+        tmpSndItem = ImGui.InputText('Filename##ItemSND', tmpSndItem)
+        if tmpSndItem ~= settings.Sounds[settings.theme].soundItem.file then
+            settings.Sounds[settings.theme].soundItem.file = tmpSndItem
+        end
+        ImGui.TableNextColumn()
+        ImGui.SetNextItemWidth(100)
+        tmpVolItem = ImGui.InputFloat('Volume##ItemVOL', tmpVolItem, 0.1)
+        if tmpVolItem ~= settings.volItem then
+            settings.volItem = tmpVolItem
+        end
+        ImGui.TableNextColumn()
+        ImGui.SetNextItemWidth(100)
+        tmpDurItem = ImGui.InputInt('Duration##ItemDUR', tmpDurItem)
+        if tmpDurItem ~= settings.Sounds[settings.theme].soundItem.duration then
+            settings.Sounds[settings.theme].soundItem.duration = tmpDurItem
+        end
+        ImGui.TableNextColumn()
+        if ImGui.Button("Test and Save##ItemALERT") then
+            soundDuration = tmpDurItem
+            setVolume(settings.volItem)
+            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundItem.file))
+            mq.pickle(configFile, settings)
+        end
+
         ImGui.EndTable()
     end
     tmpLowHp = ImGui.InputInt('Low HP Threshold##LowHealthThresh', tmpLowHp, 1)
@@ -646,19 +693,26 @@ local function Config_GUI(open)
     if tmpPulse ~= settings.Pulse then
         settings.Pulse = tmpPulse
     end
-    settings.ItemWatch = ImGui.InputText('Item Watch##ItemWatch', settings.ItemWatch)
+    if tmpDoItem then
+        settings.ItemWatch = ImGui.InputText('Item Watch##ItemWatch', settings.ItemWatch)
+    end
 
     if ImGui.Button('Close') then
         openConfigGUI = false
         mq.pickle(configFile, settings)
-        if itemWatch then
-            mq.unevent("item_added")
-            itemWatch = false
-        end
-        if settings.ItemWatch ~= '' then
-            local eStr = string.format("#*#%s#*#", settings.ItemWatch)
-            mq.event("item_added", eStr, eventItem)
-            itemWatch = true
+        if tmpDoItem then
+            if itemWatch then
+                mq.unevent("item_added")
+                itemWatch = false
+            end
+            if settings.ItemWatch ~= '' then
+                local eStr = string.format("#*#%s#*#", settings.ItemWatch)
+                mq.event("item_added", eStr,  function(line)
+                    eventSound(line, 'Item', settings.volItem)
+                    soundDuration = settings.Sounds[settings.theme].soundItem.duration
+                end)
+                itemWatch = true
+            end
         end
     end
 
