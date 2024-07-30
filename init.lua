@@ -4,7 +4,7 @@ local ImGui = require('ImGui')
 local script = "SillySounds"
 local itemWatch = false
 if mq.TLO.EverQuest.GameState() ~= "INGAME" then
-    printf("\aw[\at%s\ax] \arNot in game, \ayTry again later...",script)
+    printf("\aw[\at%s\ax] \arNot in game, \ayTry again later...", script)
     mq.exit()
 end
 
@@ -16,18 +16,17 @@ ffi.cdef[[
 ]]
 
 local winmm = ffi.load("winmm")
-
 local SND_ASYNC = 0x0001
 local SND_FILENAME = 0x00020000
 local flags = SND_FILENAME + SND_ASYNC
 local originalVolume = 100
 local soundDuration = 1
-local timerPlay =0
+local timerPlay = 0
 local playing = false
 
 -- Main Settings
 local RUNNING = true
-local path = string.format("%s/%s/sounds/",mq.TLO.Lua.Dir(), script)
+local path = string.format("%s/%s/sounds/", mq.TLO.Lua.Dir(), script)
 local configFile = string.format("%s/MyUI/%s/%s/%s.lua", mq.configDir, script, mq.TLO.EverQuest.Server(), mq.TLO.Me.Name())
 local settings, defaults = {}, {}
 local timerA, timerB = os.time(), os.time()
@@ -143,6 +142,7 @@ local function checkAlarms()
 end
 
 local function eventItem(line)
+    if not settings.doItem then return end
     eventSound('', 'Item', settings.volItem)
 end
 
@@ -208,7 +208,7 @@ local function helpList(type)
         printf('\aw%s \ax:: \at /sillysounds aa 0-100 \t\ag Sets Volume for AA 0-100 accepts decimal values\ax', timeStamp)
         printf('\aw%s \ax:: \at /sillysounds die 0-100 \t\ag Sets Volume for die 0-100 accepts decimal values\ax', timeStamp)
         printf('\aw%s \ax:: \at /sillysounds volhp 0-100 \t\ag Sets Volume for lowHP 0-100 accepts decimal values\ax', timeStamp)
-        printf('\aw%s \ax:: \ay%s Other\ax', timeStamp,script)
+        printf('\aw%s \ax:: \ay%s Other\ax', timeStamp, script)
         printf('\aw%s \ax:: \at /sillysounds help      \t\ag Brings up this list\ax', timeStamp)
         printf('\aw%s \ax:: \at /sillysounds config    \t\ag Opens Config GUI Window\ax', timeStamp)
         printf('\aw%s \ax:: \at /sillysounds show      \t\ag Prints out the current settings\ax', timeStamp)
@@ -226,7 +226,7 @@ end
 -- Binds
 local function bind(...)
     local newSetting = false
-    local args = {...}
+    local args = { ... }
     local key = args[1]
     local value = tonumber(args[2], 10) or nil
     if key == nil then
@@ -311,6 +311,32 @@ local function bind(...)
     if newSetting then mq.pickle(configFile, settings) end
 end
 
+-- Function to draw settings for each alert type
+local function DrawAlertSettings(alertName, script, path, configFile)
+    ImGui.TableNextRow()
+    ImGui.TableNextColumn()
+    local alert = string.format("do%s", alertName)
+    local volAlert = string.format("vol%s", alertName)
+    local soundAlert = string.format("sound%s", alertName)
+    settings[alert] = ImGui.Checkbox(alertName.." Alert##"..script, settings[alert])
+    ImGui.TableNextColumn()
+    ImGui.SetNextItemWidth(70)
+    settings.Sounds[settings.theme][soundAlert].file = ImGui.InputText('Filename##'..alertName..'SND', settings.Sounds[settings.theme][soundAlert].file )
+    ImGui.TableNextColumn()
+    ImGui.SetNextItemWidth(100)
+    settings[volAlert] = ImGui.InputFloat('Volume##'..alertName..'VOL', settings[volAlert], 0.1)
+    ImGui.TableNextColumn()
+    ImGui.SetNextItemWidth(100)
+    settings.Sounds[settings.theme][soundAlert].duration = ImGui.InputInt('Duration##'..alertName..'DUR', settings.Sounds[settings.theme][soundAlert].duration)
+    ImGui.TableNextColumn()
+    if ImGui.Button("Test and Save##"..alertName.."ALERT") then
+        soundDuration = settings.Sounds[settings.theme][soundAlert].duration
+        setVolume(settings[volAlert])
+        playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme][soundAlert].file))
+        mq.pickle(configFile, settings)
+    end
+end
+
 -- UI
 local function Config_GUI(open)
     if not openConfigGUI then return end
@@ -322,7 +348,7 @@ local function Config_GUI(open)
         ImGui.End()
         return open
     end
-
+    
     tmpTheme = ImGui.InputText("Sound Folder Name##FolderName", tmpTheme)
     ImGui.SameLine()
     if ImGui.Button('Update##'..script) then
@@ -335,52 +361,14 @@ local function Config_GUI(open)
                 soundLowHp = {file = "lowHP.wav", duration = 3},
                 soundAlarm = {file = "Alarm.wav", duration = 5},
                 soundAA = {file = "AA.wav", duration = 2},
-                soundFizzle = {file = 'Fizzle.wav', duration = 1}
+                soundFizzle = {file = 'Fizzle.wav', duration = 1},
+                soundItem = {file = 'Hit.wav', duration = 2}
             }
         end
         settings.theme = tmpTheme
         mq.pickle(configFile, settings)
         loadSettings()
     end
-    --- tmp vars to change ---
-    local tmpSndHit = settings.Sounds[settings.theme].soundHit.file or 'Hit.wav'
-    local tmpVolHit = settings.volHit or 100
-    local tmpDurHit = settings.Sounds[settings.theme].soundHit.duration or 2
-    local tmpDoHit = settings.doHit
-    local tmpSndBonk = settings.Sounds[settings.theme].soundBonk.file or 'Bonk.wav'
-    local tmpVolBonk = settings.volBonk or 100
-    local tmpDurBonk = settings.Sounds[settings.theme].soundBonk.duration or 2
-    local tmpDoBonk = settings.doBonk
-    local tmpSndFizzle = settings.Sounds[settings.theme].soundFizzle.file or 'Fizzle.wav'
-    local tmpVolFizzle = settings.volFizzle or 100
-    local tmpDurFizzle = settings.Sounds[settings.theme].soundFizzle.duration or 1
-    local tmpDoFizzle = settings.doFizzle
-    local tmpSndLvl = settings.Sounds[settings.theme].soundLvl.file or 'LevelUp.wav'
-    local tmpVolLvl = settings.volLvl or 100
-    local tmpDurLvl = settings.Sounds[settings.theme].soundLvl.duration or 3
-    local tmpDoLvl = settings.doLvl
-    local tmpSndAA = settings.Sounds[settings.theme].soundAA.file or 'AA.wav'
-    local tmpVolAA = settings.volAA or 100
-    local tmpDurAA = settings.Sounds[settings.theme].soundAA.duration or 2
-    local tmpDoAA = settings.doAA
-    local tmpSndDie = settings.Sounds[settings.theme].soundDie.file or 'Die.wav'
-    local tmpVolDie = settings.volDie or 100
-    local tmpDurDie = settings.Sounds[settings.theme].soundDie.duration or 4
-    local tmpDoDie = settings.doDie
-    local tmpSndAlarm = settings.Sounds[settings.theme].soundAlarm.file or 'Alarm.wav'
-    local tmpVolAlarm = settings.volAlarm or 100
-    local tmpDurAlarm = settings.Sounds[settings.theme].soundAlarm.duration or 5
-    local tmpDoAlarm = settings.doAlarm
-    local tmpSndHP = settings.Sounds[settings.theme].soundLowHp.file or 'lowHP.wav'
-    local tmpVolHP = settings.volHP or 100
-    local tmpDurHP = settings.Sounds[settings.theme].soundLowHp.duration or 3
-    local tmpDoHP = settings.doHP or false
-    local tmpLowHp = settings.lowHP or 50
-    local tmpPulse = settings.Pulse or 1
-    local tmpDoItem = settings.doItem or false
-    local tmpSndItem = settings.Sounds[settings.theme].soundItem.file or 'Hit.wav'
-    local tmpVolItem = settings.volItem or 100
-    local tmpDurItem = settings.Sounds[settings.theme].soundItem.duration or 2
 
     if ImGui.BeginTable('Settings_Table##'..script, 5, ImGuiTableFlags.None) then
         ImGui.TableSetupColumn('##Toggle_'..script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
@@ -388,319 +376,38 @@ local function Config_GUI(open)
         ImGui.TableSetupColumn('##Vol_'..script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
         ImGui.TableSetupColumn('##Dur_'..script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
         ImGui.TableSetupColumn('##SaveBtn_'..script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
-        ImGui.TableNextRow()
-        ImGui.TableNextColumn()
-        tmpDoHit = ImGui.Checkbox('Hit Alert##'..script, tmpDoHit)
-        if tmpDoHit ~= settings.doHit then
-            settings.doHit = tmpDoHit
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(70)
-        tmpSndHit = ImGui.InputText('Filename##HITSND', tmpSndHit)
-        if tmpSndHit ~= settings.Sounds[settings.theme].soundHit.file then
-            settings.Sounds[settings.theme].soundHit.file = tmpSndHit
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpVolHit = ImGui.InputFloat('Volume##HITVOL', tmpVolHit, 0.1)
-        if tmpVolHit ~= settings.volHit then
-            settings.volHit = tmpVolHit
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpDurHit = ImGui.InputInt('Duration##HITDUR', tmpDurHit)
-        if tmpDurHit ~= settings.Sounds[settings.theme].soundHit.duration then
-            settings.Sounds[settings.theme].soundHit.duration = tmpDurHit
-        end
-        ImGui.TableNextColumn()
-        if ImGui.Button("Test and Save##HITALERT") then
-            soundDuration = tmpDurHit
-            setVolume(settings.volHit)
-            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundHit.file))
-            mq.pickle(configFile, settings)
-        end
-        ImGui.TableNextRow()
-        ImGui.TableNextColumn()
-        --- Bonk Alerts ---
-        tmpDoBonk = ImGui.Checkbox('Bonk Alert##'..script, tmpDoBonk)
-        if tmpDoBonk ~= settings.doBonk then
-            settings.doBonk = tmpDoBonk
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(70)
-        tmpSndBonk = ImGui.InputText('Filename##BonkSND', tmpSndBonk)
-        if tmpSndBonk ~= settings.Sounds[settings.theme].soundBonk.file then
-            settings.Sounds[settings.theme].soundBonk.file = tmpSndBonk
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpVolBonk = ImGui.InputFloat('Volume##BonkVOL', tmpVolBonk, 0.1)
-        if tmpVolBonk ~= settings.volBonk then
-            settings.volBonk = tmpVolBonk
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpDurBonk = ImGui.InputInt('Duration##BonkDUR', tmpDurBonk)
-        if tmpDurBonk ~= settings.Sounds[settings.theme].soundBonk.duration then
-            settings.Sounds[settings.theme].soundBonk.duration = tmpDurBonk
-        end
-        ImGui.TableNextColumn()
-        if ImGui.Button("Test and Save##BonkALERT") then
-            soundDuration = tmpDurBonk
-            setVolume(settings.volBonk)
-            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundBonk.file))
-            mq.pickle(configFile, settings)
-        end
-        --- Spell Fizzle Alerts ---
-        ImGui.TableNextRow()
-        ImGui.TableNextColumn()
-        tmpDoFizzle = ImGui.Checkbox('Fizzle Alert##'..script, tmpDoFizzle)
-        if tmpDoFizzle ~= settings.doFizzle then
-            settings.doFizzle = tmpDoFizzle
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(70)
-        tmpSndFizzle = ImGui.InputText('Filename##FizzleSND', tmpSndFizzle)
-        if tmpSndFizzle ~= settings.Sounds[settings.theme].soundFizzle.file then
-            settings.Sounds[settings.theme].soundFizzle.file = tmpSndFizzle
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpVolFizzle = ImGui.InputFloat('Volume##FizzleVOL', tmpVolFizzle, 0.1)
-        if tmpVolFizzle ~= settings.volFizzle then
-            settings.volFizzle = tmpVolFizzle
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpDurFizzle = ImGui.InputInt('Duration##FizzleDUR', tmpDurFizzle)
-        if tmpDurFizzle ~= settings.Sounds[settings.theme].soundFizzle.duration then
-            settings.Sounds[settings.theme].soundFizzle.duration = tmpDurFizzle
-        end
-        ImGui.TableNextColumn()
-        if ImGui.Button("Test and Save##FizzleALERT") then
-            soundDuration = tmpDurFizzle
-            setVolume(settings.volFizzle)
-            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundFizzle.file))
-            mq.pickle(configFile, settings)
-        end
 
-        --- Lvl Alerts ---
-        ImGui.TableNextRow()
-        ImGui.TableNextColumn()
-
-        tmpDoLvl = ImGui.Checkbox('LvlUp Alert##'..script, tmpDoLvl)
-        if settings.doLvl ~= tmpDoLvl then
-            settings.doLvl = tmpDoLvl
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(70)
-        tmpSndLvl = ImGui.InputText('Filename##LvlUpSND', tmpSndLvl)
-        if tmpSndLvl ~= settings.Sounds[settings.theme].soundLvl.file then
-            settings.Sounds[settings.theme].soundLvl.file = tmpSndLvl
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpVolLvl = ImGui.InputFloat('Volume##LvlUpVOL', tmpVolLvl, 0.1)
-        if tmpVolLvl ~= settings.volLvl then
-            settings.volLvl = tmpVolLvl
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpDurLvl = ImGui.InputInt('Duration##LvlUpDUR', tmpDurLvl)
-        if tmpDurLvl ~= settings.Sounds[settings.theme].soundLvl.duration then
-            settings.Sounds[settings.theme].soundLvl.duration = tmpDurLvl
-        end
-        ImGui.TableNextColumn()
-        if ImGui.Button("Test and Save##LvlUpALERT") then
-            soundDuration = tmpDurLvl
-            setVolume(settings.volLvl)
-            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundLvl.file))
-            mq.pickle(configFile, settings)
-        end
-        --- AA Alerts ---
-        ImGui.TableNextRow()
-        ImGui.TableNextColumn()
-
-        tmpDoAA = ImGui.Checkbox('AA Alert##'..script, tmpDoAA)
-        if tmpDoAA ~= settings.doAA then
-            settings.doAA = tmpDoAA
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(70)
-        tmpSndAA = ImGui.InputText('Filename##AASND', tmpSndAA)
-        if tmpSndAA ~= settings.Sounds[settings.theme].soundAA.file then
-            settings.Sounds[settings.theme].soundAA.file = tmpSndAA
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpVolAA = ImGui.InputFloat('Volume##AAVOL', tmpVolAA, 0.1)
-        if tmpVolAA ~= settings.volAA then
-            settings.volAA = tmpVolAA
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpDurAA = ImGui.InputInt('Duration##AADUR', tmpDurAA)
-        if tmpDurAA ~= settings.Sounds[settings.theme].soundAA.duration then
-            settings.Sounds[settings.theme].soundAA.duration = tmpDurAA
-        end
-        ImGui.TableNextColumn()
-        if ImGui.Button("Test and Save##AAALERT") then
-            soundDuration = tmpDurAA
-            setVolume(settings.volAA)
-            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundAA.file))
-            mq.pickle(configFile, settings)
-        end
-
-        --- Death Alerts ---
-        ImGui.TableNextRow()
-        ImGui.TableNextColumn()
-
-        tmpDoDie = ImGui.Checkbox('Death Alert##'..script, tmpDoDie)
-        if settings.doDie ~= tmpDoDie then
-            settings.doDie = tmpDoDie
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(70)
-        tmpSndDie = ImGui.InputText('Filename##DeathSND', tmpSndDie)
-        if tmpSndDie ~= settings.Sounds[settings.theme].soundDie.file then
-            settings.Sounds[settings.theme].soundDie.file = tmpSndDie
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpVolDie = ImGui.InputFloat('Volume##DeathVOL', tmpVolDie, 0.1)
-        if tmpVolDie ~= settings.volDie then
-            settings.volDie = tmpVolDie
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpDurDie = ImGui.InputInt('Duration##DeathDUR', tmpDurDie)
-        if tmpDurDie ~= settings.Sounds[settings.theme].soundDie.duration then
-            settings.Sounds[settings.theme].soundDie.duration = tmpDurDie
-        end
-        ImGui.TableNextColumn()
-        if ImGui.Button("Test and Save##DeathALERT") then
-            soundDuration = tmpDurDie
-            setVolume(settings.volDie)
-            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundDie.file))
-            mq.pickle(configFile, settings)
-        end
-        -- Alarm Alerts
-        ImGui.TableNextRow()
-        ImGui.TableNextColumn()
-        tmpDoAlarm = ImGui.Checkbox('Alarm Alert##'..script, tmpDoAlarm)
-        if settings.doAlarm ~= tmpDoAlarm then
-            settings.doAlarm = tmpDoAlarm
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(70)
-        tmpSndAlarm = ImGui.InputText('Filename##AlarmSND', tmpSndAlarm)
-        if tmpSndAlarm ~= settings.Sounds[settings.theme].soundAlarm.file then
-            settings.Sounds[settings.theme].soundAlarm.file = tmpSndAlarm
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpVolAlarm = ImGui.InputFloat('Volume##AlarmVOL', tmpVolAlarm, 0.1)
-        if tmpVolAlarm ~= settings.volAlarm then
-            settings.volAlarm = tmpVolAlarm
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpDurAlarm = ImGui.InputInt('Duration##AlarmDUR', tmpDurAlarm)
-        if tmpDurAlarm ~= settings.Sounds[settings.theme].soundAlarm.duration then
-            settings.Sounds[settings.theme].soundAlarm.duration = tmpDurAlarm
-        end
-        ImGui.TableNextColumn()
-        if ImGui.Button("Test and Save##AlarmALERT") then
-            soundDuration = tmpDurAlarm
-            setVolume(settings.volAlarm)
-            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundAlarm.file))
-            mq.pickle(configFile, settings)
-        end
-
-        --- LOW HP ---
-        ImGui.TableNextRow()
-        ImGui.TableNextColumn()
-        tmpDoHP = ImGui.Checkbox('Low Health Alert##'..script, tmpDoHP)
-        if settings.doHP ~= tmpDoHP then
-            settings.doHP = tmpDoHP
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(70)
-        tmpSndHP = ImGui.InputText('Filename##LowHealthSND', tmpSndHP)
-        if tmpSndHP ~= settings.Sounds[settings.theme].soundLowHp.file then
-            settings.Sounds[settings.theme].soundLowHp.file = tmpSndHP
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpVolHP = ImGui.InputFloat('Volume##LowHealthVOL', tmpVolHP, 0.1)
-        if tmpVolHP ~= settings.volHP then
-            settings.volHP = tmpVolHP
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpDurHP = ImGui.InputInt('Duration##LowHealthDUR', tmpDurHP)
-        if tmpDurHP ~= settings.Sounds[settings.theme].soundLowHp.duration then
-            settings.Sounds[settings.theme].soundLowHp.duration = tmpDurHP
-        end
-        ImGui.TableNextColumn()
-        if ImGui.Button("Test and Save##LowHealthALERT") then
-            soundDuration = tmpDurHP
-            setVolume(settings.volHP)
-            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundLowHp.file))
-            mq.pickle(configFile, settings)
-        end
-
-        --- Item Alerts ---
-        ImGui.TableNextRow()
-        ImGui.TableNextColumn()
-        tmpDoItem = ImGui.Checkbox('Item Alert##'..script, tmpDoItem)
-        if settings.doItem ~= tmpDoItem then
-            settings.doItem = tmpDoItem
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(70)
-        tmpSndItem = ImGui.InputText('Filename##ItemSND', tmpSndItem)
-        if tmpSndItem ~= settings.Sounds[settings.theme].soundItem.file then
-            settings.Sounds[settings.theme].soundItem.file = tmpSndItem
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpVolItem = ImGui.InputFloat('Volume##ItemVOL', tmpVolItem, 0.1)
-        if tmpVolItem ~= settings.volItem then
-            settings.volItem = tmpVolItem
-        end
-        ImGui.TableNextColumn()
-        ImGui.SetNextItemWidth(100)
-        tmpDurItem = ImGui.InputInt('Duration##ItemDUR', tmpDurItem)
-        if tmpDurItem ~= settings.Sounds[settings.theme].soundItem.duration then
-            settings.Sounds[settings.theme].soundItem.duration = tmpDurItem
-        end
-        ImGui.TableNextColumn()
-        if ImGui.Button("Test and Save##ItemALERT") then
-            soundDuration = tmpDurItem
-            setVolume(settings.volItem)
-            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundItem.file))
-            mq.pickle(configFile, settings)
-        end
+        DrawAlertSettings('Hit', script, path, configFile)
+        DrawAlertSettings('Bonk', script, path, configFile)
+        DrawAlertSettings('Fizzle', script, path, configFile)
+        DrawAlertSettings('Lvl', script, path, configFile)
+        DrawAlertSettings('AA', script, path, configFile)
+        DrawAlertSettings('Die', script, path, configFile)
+        DrawAlertSettings('Alarm', script, path, configFile)
+        DrawAlertSettings('LowHp', script, path, configFile)
+        DrawAlertSettings('Item', script, path, configFile)
 
         ImGui.EndTable()
     end
+    local tmpLowHp, tmpPulse = settings.lowHP, settings.Pulse
     tmpLowHp = ImGui.InputInt('Low HP Threshold##LowHealthThresh', tmpLowHp, 1)
     if tmpLowHp ~= settings.lowHP then
         settings.lowHP = tmpLowHp
     end
+
     tmpPulse = ImGui.InputInt('Pulse Delay##LowHealthPulse', tmpPulse, 1)
     if tmpPulse ~= settings.Pulse then
         settings.Pulse = tmpPulse
     end
-    if tmpDoItem then
+
+    if settings.doItem then
         settings.ItemWatch = ImGui.InputText('Item Watch##ItemWatch', settings.ItemWatch)
     end
 
     if ImGui.Button('Close') then
         openConfigGUI = false
         mq.pickle(configFile, settings)
-        if tmpDoItem then
+        if settings.doItem then
             if itemWatch then
                 mq.unevent("item_added")
                 itemWatch = false
@@ -715,7 +422,6 @@ local function Config_GUI(open)
             end
         end
     end
-
     ImGui.End()
 end
 
@@ -723,7 +429,7 @@ end
 local function mainLoop()
     while RUNNING do
         if mq.TLO.EverQuest.GameState() ~= "INGAME" then
-            printf("\aw[\at%s\ax] \arNot in game, \ayTry again later...",script)
+            printf("\aw[\at%s\ax] \arNot in game, \ayTry again later...", script)
             mq.exit()
         end
         mq.doevents()
@@ -744,7 +450,7 @@ local function mainLoop()
             end
         end
         local tnpVol = getVolume()
-        if playing == true  and timerPlay > 0 then
+        if playing == true and timerPlay > 0 then
             local curTime = os.time()
             if curTime - timerPlay > soundDuration then
                 resetVolume()
