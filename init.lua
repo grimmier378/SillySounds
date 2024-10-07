@@ -1,15 +1,28 @@
 local mq = require('mq')
 local ffi = require("ffi")
 local ImGui = require('ImGui')
+local Module = {}
 local script = "SillySounds"
-local itemWatch = false
-if mq.TLO.EverQuest.GameState() ~= "INGAME" then
-    printf("\aw[\at%s\ax] \arNot in game, \ayTry again later...", script)
-    mq.exit()
+local path = string.format("%s/myui/sounds/", mq.TLO.Lua.Dir())
+
+Module.Name = "SillySounds"
+Module.IsRunning = false
+
+---@diagnostic disable-next-line:undefined-global
+local loadedExeternally = MyUI_ScriptName ~= nil and true or false
+
+if not loadedExeternally then
+    MyUI_Utils = require('lib.common')
+    MyUI_Icons = require('mq.ICONS')
+    MyUI_CharLoaded = mq.TLO.Me.DisplayName()
+    MyUI_Server = mq.TLO.MacroQuest.Server()
+    path = string.format("%s/%s/sounds/", mq.TLO.Lua.Dir(), script)
 end
 
+local itemWatch = false
+
 -- C code definitions for volume control
-ffi.cdef[[
+ffi.cdef [[
     int sndPlaySoundA(const char *pszSound, unsigned int fdwSound);
     uint32_t waveOutSetVolume(void* hwo, uint32_t dwVolume);
     uint32_t waveOutGetVolume(void* hwo, uint32_t* pdwVolume);
@@ -25,9 +38,7 @@ local timerPlay = 0
 local playing = false
 
 -- Main Settings
-local RUNNING = true
-local path = string.format("%s/%s/sounds/", mq.TLO.Lua.Dir(), script)
-local configFile = string.format("%s/MyUI/%s/%s/%s.lua", mq.configDir, script, mq.TLO.EverQuest.Server(), mq.TLO.Me.Name())
+local configFile = string.format("%s/MyUI/%s/%s/%s.lua", mq.configDir, script, MyUI_Server, MyUI_CharLoaded)
 local settings, defaults = {}, {}
 local timerA, timerB = os.time(), os.time()
 local openConfigGUI = false
@@ -59,38 +70,27 @@ defaults = {
     ItemWatch = '',
     Sounds = {
         default = {
-            soundHit = {file = "Hit.wav", duration = 2},
-            soundAlarm = {file = "Alarm.wav", duration = 5},
-            soundBonk = {file = "Bonk.wav", duration = 2},
-            soundLvl = {file = "LevelUp.wav", duration = 3},
-            soundDie = {file = "Die.wav", duration = 4},
-            soundLowHp = {file = "lowHP.wav", duration = 3},
-            soundAA = {file = "AA.wav", duration = 2},
-            soundFizzle = {file = 'Fizzle.wav', duration = 1},
-            soundItem = {file = 'Hit.wav', duration = 2}
-        }
-    }
+            soundHit = { file = "Hit.wav", duration = 2, },
+            soundAlarm = { file = "Alarm.wav", duration = 5, },
+            soundBonk = { file = "Bonk.wav", duration = 2, },
+            soundLvl = { file = "LevelUp.wav", duration = 3, },
+            soundDie = { file = "Die.wav", duration = 4, },
+            soundLowHp = { file = "lowHP.wav", duration = 3, },
+            soundAA = { file = "AA.wav", duration = 2, },
+            soundFizzle = { file = 'Fizzle.wav', duration = 1, },
+            soundItem = { file = 'Hit.wav', duration = 2, },
+        },
+    },
 }
-
--- Check if the file exists
-local function File_Exists(name)
-    local f = io.open(name, "r")
-    if f ~= nil then
-        io.close(f)
-        return true
-    else
-        return false
-    end
-end
 
 -- Function to play sound allowing for simultaneous plays
 local function playSound(filename)
-    if File_Exists(filename) then
+    if MyUI_Utils.File.Exists(filename) then
         timerPlay = os.time()
         playing = true
         winmm.sndPlaySoundA(filename, flags)
     else
-        printf('\aySound File \aw[\ag%s\aw]\ao is MISSING!!\ax', filename)
+        MyUI_Utils.PrintOutput('MyUI', nil, '\aySound File \aw[\ag%s\aw]\ao is MISSING!!\ax', filename)
     end
 end
 
@@ -148,7 +148,7 @@ end
 
 -- Settings
 local function loadSettings()
-    if not File_Exists(configFile) then
+    if not MyUI_Utils.File.Exists(configFile) then
         settings = defaults
         mq.pickle(configFile, settings)
         loadSettings()
@@ -161,24 +161,18 @@ local function loadSettings()
     end
     tmpTheme = settings.theme or 'default'
     local newSetting = false
-    for k, v in pairs(defaults) do
-        if settings[k] == nil then
-            settings[k] = v
-            newSetting = true
-        end
-    end
-    for k, v in pairs(defaults.Sounds.default) do
-        if settings.Sounds[settings.theme][k] == nil then
-            settings.Sounds[settings.theme][k] = v
-            newSetting = true
-        end
-    end
+
+    newSetting = MyUI_Utils.CheckDefaultSettings(defaults, settings) or newSetting
+    newSetting = MyUI_Utils.CheckDefaultSettings(defaults.Sounds.default, settings.Sounds[settings.theme]) or newSetting
+
+    -- check for missing sound files
     for k, v in pairs(settings.Sounds[settings.theme]) do
-        if not File_Exists(string.format("%s%s/%s", path, settings.theme, v.file)) then
+        if not MyUI_Utils.File.Exists(string.format("%s%s/%s", path, settings.theme, v.file)) then
             settings[k] = false
-            printf("\aySound file %s missing!!\n\tTurning %s \arOFF", string.format("%s%s/%s", path, settings.theme, v.file), k)
+            MyUI_Utils.PrintOutput('MyUI', nil, "\aySound file %s missing!!\n\tTurning %s \arOFF", string.format("%s%s/%s", path, settings.theme, v.file), k)
         end
     end
+
     if settings.ItemWatch ~= '' then
         local eStr = string.format("#*#%s#*#", settings.ItemWatch)
         mq.event("item_added", eStr, eventItem)
@@ -189,35 +183,34 @@ end
 
 -- Print Help
 local function helpList(type)
-    local timeStamp = mq.TLO.Time()
     if type == 'help' then
-        printf('\aw%s \ax:: \ay%s Help\ax', timeStamp, script)
-        printf('\aw%s \ax:: \at /sillysounds hit     \t \ag Toggles sound on and off for your hits\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds bonk    \t \ag Toggles sound on and off for you being hit\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds fizzle    \t \ag Toggles sound on and off for your spell fizzles\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds lvl     \t \ag Toggles sound on and off for when you Level\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds aa      \t \ag Toggles sound on and off for You gain AA\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds die     \t \ag Toggles sound on and off for your Deaths\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds hp      \t \ag Toggles sound on and off for Low Health\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds hp 1-100\t \ag Sets PctHPs to toggle low HP sound, 1-100\ax', timeStamp)
-        printf('\aw%s \ax:: \ay%s Volume Control\ax', timeStamp, script)
-        printf('\aw%s \ax:: \at /sillysounds hit 0-100\t \ag Sets Volume for hits 0-100 accepts decimal values\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds bonk 0-100\t\ag Sets Volume for bonk 0-100 accepts decimal values\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds fizzle 0-100\t \ag Sets Volume for fizzle 0-100 accepts decimal values\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds lvl 0-100 \t\ag Sets Volume for lvl 0-100 accepts decimal values\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds aa 0-100 \t\ag Sets Volume for AA 0-100 accepts decimal values\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds die 0-100 \t\ag Sets Volume for die 0-100 accepts decimal values\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds volhp 0-100 \t\ag Sets Volume for lowHP 0-100 accepts decimal values\ax', timeStamp)
-        printf('\aw%s \ax:: \ay%s Other\ax', timeStamp, script)
-        printf('\aw%s \ax:: \at /sillysounds help      \t\ag Brings up this list\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds config    \t\ag Opens Config GUI Window\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds show      \t\ag Prints out the current settings\ax', timeStamp)
-        printf('\aw%s \ax:: \at /sillysounds quit      \t\ag Exits the script\ax', timeStamp)
+        MyUI_Utils.PrintOutput('MyUI', nil, '\ay%s Help\ax', script)
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds hit     \t \ag Toggles sound on and off for your hits\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds bonk    \t \ag Toggles sound on and off for you being hit\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds fizzle    \t \ag Toggles sound on and off for your spell fizzles\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds lvl     \t \ag Toggles sound on and off for when you Level\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds aa      \t \ag Toggles sound on and off for You gain AA\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds die     \t \ag Toggles sound on and off for your Deaths\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds hp      \t \ag Toggles sound on and off for Low Health\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds hp 1-100\t \ag Sets PctHPs to toggle low HP sound, 1-100\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\ay%s Volume Control\ax', script)
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds hit 0-100\t \ag Sets Volume for hits 0-100 accepts decimal values\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds bonk 0-100\t\ag Sets Volume for bonk 0-100 accepts decimal values\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds fizzle 0-100\t \ag Sets Volume for fizzle 0-100 accepts decimal values\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds lvl 0-100 \t\ag Sets Volume for lvl 0-100 accepts decimal values\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds aa 0-100 \t\ag Sets Volume for AA 0-100 accepts decimal values\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds die 0-100 \t\ag Sets Volume for die 0-100 accepts decimal values\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds volhp 0-100 \t\ag Sets Volume for lowHP 0-100 accepts decimal values\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\ay%s Other\ax', script)
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds help      \t\ag Brings up this list\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds config    \t\ag Opens Config GUI Window\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds show      \t\ag Prints out the current settings\ax')
+        -- MyUI_Utils.PrintOutput('MyUI',nil,'\at /sillysounds quit      \t\ag Exits the script\ax')
     elseif type == 'show' then
-        printf('\aw%s \ax:: \ay%s Current Settings\ax', timeStamp, script)
+        MyUI_Utils.PrintOutput('MyUI', nil, '\ay%s Current Settings\ax', script)
         for k, v in pairs(settings) do
             if k ~= 'Sounds' then
-                printf("\aw%s \ax:: \at%s \ax:\ag %s\ax", timeStamp, k, tostring(v))
+                MyUI_Utils.PrintOutput('MyUI', nil, "\at%s \ax:\ag %s\ax", k, tostring(v))
             end
         end
     end
@@ -226,7 +219,7 @@ end
 -- Binds
 local function bind(...)
     local newSetting = false
-    local args = { ... }
+    local args = { ..., }
     local key = args[1]
     local value = tonumber(args[2], 10) or nil
     if key == nil then
@@ -236,68 +229,68 @@ local function bind(...)
     if string.lower(key) == 'hit' then
         if value ~= nil then
             settings.volHit = value or 50
-            printf("setting %s Volume to %s", key, tostring(settings.volHit))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s Volume to %s", key, tostring(settings.volHit))
             playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundHit.file))
         else
             settings.doHit = not settings.doHit
-            printf("setting %s to %s", key, tostring(settings.doHit))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s to %s", key, tostring(settings.doHit))
         end
         newSetting = true
     elseif string.lower(key) == 'bonk' then
         if value ~= nil then
             settings.volBonk = value or 50
-            printf("setting %s Volume to %d", key, tostring(settings.volBonk))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s Volume to %d", key, tostring(settings.volBonk))
             playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundBonk.file))
         else
             settings.doBonk = not settings.doBonk
-            printf("setting %s to %s", key, tostring(settings.doBonk))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s to %s", key, tostring(settings.doBonk))
         end
         newSetting = true
     elseif string.lower(key) == 'aa' then
         if value ~= nil then
             settings.volAA = value or 50
-            printf("setting %s Volume to %d", key, tostring(settings.volAA))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s Volume to %d", key, tostring(settings.volAA))
             playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundAA.file))
         else
             settings.doAA = not settings.doAA
-            printf("setting %s to %s", key, tostring(settings.doAA))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s to %s", key, tostring(settings.doAA))
         end
         newSetting = true
     elseif string.lower(key) == 'config' then
-        openConfigGUI = true
+        openConfigGUI = not openConfigGUI
     elseif string.lower(key) == 'lvl' then
         if value ~= nil then
             settings.volLvl = value or 50
-            printf("setting %s Volume to %d", key, tostring(settings.volLvl))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s Volume to %d", key, tostring(settings.volLvl))
             playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundLvl.file))
         else
             settings.doLvl = not settings.doLvl
-            printf("setting %s to %s", key, tostring(settings.doLvl))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s to %s", key, tostring(settings.doLvl))
         end
         newSetting = true
     elseif string.lower(key) == 'die' then
         if value ~= nil then
             settings.volDie = value or 50
-            printf("setting %s Volume to %d", key, tostring(settings.volDie))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s Volume to %d", key, tostring(settings.volDie))
             playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundDie.file))
         else
             settings.doDie = not settings.doDie
-            printf("setting %s to %s", key, tostring(settings.doDie))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s to %s", key, tostring(settings.doDie))
         end
         newSetting = true
     elseif string.lower(key) == 'hp' then
         if value ~= nil then
             settings.lowHP = value or 0
-            printf("setting %s to %s", key, tostring(value))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s to %s", key, tostring(value))
         else
             settings.doHP = not settings.doHP
-            printf("setting %s to %s", key, tostring(settings.doHP))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s to %s", key, tostring(settings.doHP))
         end
         newSetting = true
     elseif string.lower(key) == 'volhp' then
         if value ~= nil then
             settings.volHP = value or 50
-            printf("setting %s Volume to %d", key, tostring(settings.volHP))
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s Volume to %d", key, tostring(settings.volHP))
             playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundLowHp.file))
             newSetting = true
         end
@@ -306,7 +299,7 @@ local function bind(...)
     elseif string.lower(key) == 'show' then
         helpList(key)
     elseif string.lower(key) == 'quit' or key == nil then
-        RUNNING = false
+        Module.IsRunning = false
     end
     if newSetting then mq.pickle(configFile, settings) end
 end
@@ -318,18 +311,18 @@ local function DrawAlertSettings(alertName, script, path, configFile)
     local alert = string.format("do%s", alertName)
     local volAlert = string.format("vol%s", alertName)
     local soundAlert = string.format("sound%s", alertName)
-    settings[alert] = ImGui.Checkbox(alertName.." Alert##"..script, settings[alert])
+    settings[alert] = ImGui.Checkbox(alertName .. " Alert##" .. script, settings[alert])
     ImGui.TableNextColumn()
     ImGui.SetNextItemWidth(70)
-    settings.Sounds[settings.theme][soundAlert].file = ImGui.InputText('Filename##'..alertName..'SND', settings.Sounds[settings.theme][soundAlert].file )
+    settings.Sounds[settings.theme][soundAlert].file = ImGui.InputText('Filename##' .. alertName .. 'SND', settings.Sounds[settings.theme][soundAlert].file)
     ImGui.TableNextColumn()
     ImGui.SetNextItemWidth(100)
-    settings[volAlert] = ImGui.InputFloat('Volume##'..alertName..'VOL', settings[volAlert], 0.1)
+    settings[volAlert] = ImGui.InputFloat('Volume##' .. alertName .. 'VOL', settings[volAlert], 0.1)
     ImGui.TableNextColumn()
     ImGui.SetNextItemWidth(100)
-    settings.Sounds[settings.theme][soundAlert].duration = ImGui.InputInt('Duration##'..alertName..'DUR', settings.Sounds[settings.theme][soundAlert].duration)
+    settings.Sounds[settings.theme][soundAlert].duration = ImGui.InputInt('Duration##' .. alertName .. 'DUR', settings.Sounds[settings.theme][soundAlert].duration)
     ImGui.TableNextColumn()
-    if ImGui.Button("Test and Save##"..alertName.."ALERT") then
+    if ImGui.Button("Test and Save##" .. alertName .. "ALERT") then
         soundDuration = settings.Sounds[settings.theme][soundAlert].duration
         setVolume(settings[volAlert])
         playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme][soundAlert].file))
@@ -338,132 +331,105 @@ local function DrawAlertSettings(alertName, script, path, configFile)
 end
 
 -- UI
-local function Config_GUI(open)
+function Module.RenderGUI()
     if not openConfigGUI then return end
     local lbl = string.format("%s##%s", script, script)
-    open, openConfigGUI = ImGui.Begin(lbl, open, bit32.bor(ImGuiWindowFlags.None, ImGuiWindowFlags.NoCollapse))
-    if not openConfigGUI then
-        openConfigGUI = false
-        open = false
+    local openUI, openConfigUI = ImGui.Begin(lbl, true, bit32.bor(ImGuiWindowFlags.None, ImGuiWindowFlags.NoCollapse))
+    if not openUI then
+        openConfigGUI = not openConfigGUI
         ImGui.End()
-        return open
+        return
     end
-    
-    tmpTheme = ImGui.InputText("Sound Folder Name##FolderName", tmpTheme)
-    ImGui.SameLine()
-    if ImGui.Button('Update##'..script) then
-        if settings.Sounds[tmpTheme] == nil then
-            settings.Sounds[tmpTheme] = {
-                soundHit = {file = "Hit.wav", duration = 2},
-                soundBonk = {file = "Bonk.wav", duration = 2},
-                soundLvl = {file = "LevelUp.wav", duration = 3},
-                soundDie = {file = "Die.wav", duration = 4},
-                soundLowHp = {file = "lowHP.wav", duration = 3},
-                soundAlarm = {file = "Alarm.wav", duration = 5},
-                soundAA = {file = "AA.wav", duration = 2},
-                soundFizzle = {file = 'Fizzle.wav', duration = 1},
-                soundItem = {file = 'Hit.wav', duration = 2}
-            }
+    if openConfigUI then
+        tmpTheme = ImGui.InputText("Sound Folder Name##FolderName", tmpTheme)
+        ImGui.SameLine()
+        if ImGui.Button('Update##' .. script) then
+            if settings.Sounds[tmpTheme] == nil then
+                settings.Sounds[tmpTheme] = {
+                    soundHit = { file = "Hit.wav", duration = 2, },
+                    soundBonk = { file = "Bonk.wav", duration = 2, },
+                    soundLvl = { file = "LevelUp.wav", duration = 3, },
+                    soundDie = { file = "Die.wav", duration = 4, },
+                    soundLowHp = { file = "lowHP.wav", duration = 3, },
+                    soundAlarm = { file = "Alarm.wav", duration = 5, },
+                    soundAA = { file = "AA.wav", duration = 2, },
+                    soundFizzle = { file = 'Fizzle.wav', duration = 1, },
+                    soundItem = { file = 'Hit.wav', duration = 2, },
+                }
+            end
+            settings.theme = tmpTheme
+            mq.pickle(configFile, settings)
+            loadSettings()
         end
-        settings.theme = tmpTheme
-        mq.pickle(configFile, settings)
-        loadSettings()
-    end
 
-    if ImGui.BeginTable('Settings_Table##'..script, 5, ImGuiTableFlags.None) then
-        ImGui.TableSetupColumn('##Toggle_'..script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
-        ImGui.TableSetupColumn('##File_'..script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
-        ImGui.TableSetupColumn('##Vol_'..script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
-        ImGui.TableSetupColumn('##Dur_'..script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
-        ImGui.TableSetupColumn('##SaveBtn_'..script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
+        if ImGui.BeginTable('Settings_Table##' .. script, 5, ImGuiTableFlags.None) then
+            ImGui.TableSetupColumn('##Toggle_' .. script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
+            ImGui.TableSetupColumn('##File_' .. script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
+            ImGui.TableSetupColumn('##Vol_' .. script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
+            ImGui.TableSetupColumn('##Dur_' .. script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
+            ImGui.TableSetupColumn('##SaveBtn_' .. script, ImGuiTableColumnFlags.WidthAlwaysAutoResize)
 
-        DrawAlertSettings('Hit', script, path, configFile)
-        DrawAlertSettings('Bonk', script, path, configFile)
-        DrawAlertSettings('Fizzle', script, path, configFile)
-        DrawAlertSettings('Lvl', script, path, configFile)
-        DrawAlertSettings('AA', script, path, configFile)
-        DrawAlertSettings('Die', script, path, configFile)
-        DrawAlertSettings('Alarm', script, path, configFile)
-        DrawAlertSettings('LowHp', script, path, configFile)
-        DrawAlertSettings('Item', script, path, configFile)
+            DrawAlertSettings('Hit', script, path, configFile)
+            DrawAlertSettings('Bonk', script, path, configFile)
+            DrawAlertSettings('Fizzle', script, path, configFile)
+            DrawAlertSettings('Lvl', script, path, configFile)
+            DrawAlertSettings('AA', script, path, configFile)
+            DrawAlertSettings('Die', script, path, configFile)
+            DrawAlertSettings('Alarm', script, path, configFile)
+            DrawAlertSettings('LowHp', script, path, configFile)
+            DrawAlertSettings('Item', script, path, configFile)
 
-        ImGui.EndTable()
-    end
-    local tmpLowHp, tmpPulse = settings.lowHP, settings.Pulse
-    tmpLowHp = ImGui.InputInt('Low HP Threshold##LowHealthThresh', tmpLowHp, 1)
-    if tmpLowHp ~= settings.lowHP then
-        settings.lowHP = tmpLowHp
-    end
+            ImGui.EndTable()
+        end
+        local tmpLowHp, tmpPulse = settings.lowHP, settings.Pulse
+        tmpLowHp = ImGui.InputInt('Low HP Threshold##LowHealthThresh', tmpLowHp, 1)
+        if tmpLowHp ~= settings.lowHP then
+            settings.lowHP = tmpLowHp
+        end
 
-    tmpPulse = ImGui.InputInt('Pulse Delay##LowHealthPulse', tmpPulse, 1)
-    if tmpPulse ~= settings.Pulse then
-        settings.Pulse = tmpPulse
-    end
+        tmpPulse = ImGui.InputInt('Pulse Delay##LowHealthPulse', tmpPulse, 1)
+        if tmpPulse ~= settings.Pulse then
+            settings.Pulse = tmpPulse
+        end
 
-    if settings.doItem then
-        settings.ItemWatch = ImGui.InputText('Item Watch##ItemWatch', settings.ItemWatch)
-    end
-
-    if ImGui.Button('Close') then
-        openConfigGUI = false
-        mq.pickle(configFile, settings)
         if settings.doItem then
-            if itemWatch then
-                mq.unevent("item_added")
-                itemWatch = false
+            settings.ItemWatch = ImGui.InputText('Item Watch##ItemWatch', settings.ItemWatch)
+        end
+
+        if ImGui.Button('Close') then
+            mq.pickle(configFile, settings)
+            if settings.doItem then
+                if itemWatch then
+                    mq.unevent("item_added")
+                    itemWatch = false
+                end
+                if settings.ItemWatch ~= '' then
+                    local eStr = string.format("#*#%s#*#", settings.ItemWatch)
+                    mq.event("item_added", eStr, function(line)
+                        eventSound(line, 'Item', settings.volItem)
+                        soundDuration = settings.Sounds[settings.theme].soundItem.duration
+                    end)
+                    itemWatch = true
+                end
             end
-            if settings.ItemWatch ~= '' then
-                local eStr = string.format("#*#%s#*#", settings.ItemWatch)
-                mq.event("item_added", eStr,  function(line)
-                    eventSound(line, 'Item', settings.volItem)
-                    soundDuration = settings.Sounds[settings.theme].soundItem.duration
-                end)
-                itemWatch = true
-            end
+            openConfigGUI = not openConfigGUI
         end
     end
     ImGui.End()
 end
 
--- Main loop
-local function mainLoop()
-    while RUNNING do
-        if mq.TLO.EverQuest.GameState() ~= "INGAME" then
-            printf("\aw[\at%s\ax] \arNot in game, \ayTry again later...", script)
-            mq.exit()
-        end
-        mq.doevents()
-        mq.delay(1)
-        if mq.TLO.Window('ConfirmationDialogBox').Open() then
-            alarmTagged = false
-            checkAlarms()
-        end
-        if mq.TLO.Me.PctHPs() <= settings.lowHP and mq.TLO.Me.PctHPs() > 1 and settings.doHP then
-            timerA = os.time()
-            if timerA - timerB > settings.Pulse then
-                originalVolume = getVolume()
-                setVolume(settings.volHP)
-                timerPlay = os.time()
-                soundDuration = settings.Sounds[settings.theme].soundLowHp.duration
-                playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundLowHp.file))
-                timerB = os.time()
-            end
-        end
-        local tnpVol = getVolume()
-        if playing == true and timerPlay > 0 then
-            local curTime = os.time()
-            if curTime - timerPlay > soundDuration then
-                resetVolume()
-            end
-        end
-        if not playing and timerPlay == 0 then
-            mq.delay(100)
-            local tmpVol = getVolume()
-            if originalVolume ~= tmpVol then
-                originalVolume = tmpVol
-            end
-        end
-    end
+local clockTimer = mq.gettime()
+
+function Module.Unload()
+    mq.unevent("gained_level")
+    mq.unevent("hit")
+    mq.unevent("been_hit")
+    mq.unevent("you_died")
+    mq.unevent("you_died2")
+    mq.unevent("gained_aa")
+    mq.unevent("spell_fizzle")
+    mq.unevent("item_added")
+    mq.unbind('/sillysounds')
 end
 
 -- Init
@@ -503,11 +469,71 @@ local function init()
 
     -- Slash Command Binding
     mq.bind('/sillysounds', bind)
+    Module.IsRunning = true
+    if not loadedExeternally then
+        mq.imgui.init(script .. ' Config', Module.RenderGUI)
+        Module.LocalLoop()
+    end
+end
 
-    -- Setup Config GUI
-    mq.imgui.init(script..' Config', Config_GUI)
+-- Main loop
+function Module.MainLoop()
+    if loadedExeternally then
+        ---@diagnostic disable-next-line: undefined-global
+        if not MyUI_LoadModules.CheckRunning(Module.IsRunning, Module.Name) then return end
+    end
 
-    mainLoop()
+    mq.doevents()
+
+    if mq.TLO.Window('ConfirmationDialogBox').Open() then
+        alarmTagged = false
+        checkAlarms()
+    end
+
+    if mq.TLO.Me.PctHPs() <= settings.lowHP and mq.TLO.Me.PctHPs() > 1 and settings.doHP then
+        timerA = os.time()
+        if timerA - timerB > settings.Pulse then
+            originalVolume = getVolume()
+            setVolume(settings.volHP)
+            timerPlay = os.time()
+            soundDuration = settings.Sounds[settings.theme].soundLowHp.duration
+            playSound(string.format("%s%s/%s", path, settings.theme, settings.Sounds[settings.theme].soundLowHp.file))
+            timerB = os.time()
+        end
+    end
+
+    local tnpVol = getVolume()
+    if playing == true and timerPlay > 0 then
+        local curTime = os.time()
+        if curTime - timerPlay > soundDuration then
+            resetVolume()
+            clockTimer = mq.gettime()
+        end
+    end
+
+    if not playing and timerPlay == 0 then
+        if mq.gettime() - clockTimer > 100 then
+            local tmpVol = getVolume()
+            if originalVolume ~= tmpVol then
+                originalVolume = tmpVol
+            end
+            clockTimer = mq.gettime()
+        end
+    end
+end
+
+function Module.LocalLoop()
+    while Module.IsRunning do
+        Module.MainLoop()
+        mq.delay(1)
+    end
+end
+
+if mq.TLO.EverQuest.GameState() ~= "INGAME" then
+    printf("\aw[\at%s\ax] \arNot in game, \ayTry again later...", script)
+    mq.exit()
 end
 
 init()
+
+return Module
