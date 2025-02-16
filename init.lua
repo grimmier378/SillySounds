@@ -53,6 +53,7 @@ defaults = {
     doAlarm = true,
     doItem = true,
     doFizzle = true,
+    doMissing = false,
     volFizzle = 25,
     volAlarm = 25,
     volAA = 10,
@@ -62,6 +63,7 @@ defaults = {
     volDie = 100,
     volItem = 100,
     volHP = 20,
+    volMissing = 50,
     lowHP = 50,
     theme = 'default',
     Pulse = 1,
@@ -77,6 +79,7 @@ defaults = {
             soundAA = { file = "AA.wav", duration = 2, },
             soundFizzle = { file = 'Fizzle.wav', duration = 1, },
             soundItem = { file = 'Hit.wav', duration = 2, },
+            soundMissing = { file = "Missing.wav", duration = 2, },
         },
     },
 }
@@ -191,6 +194,7 @@ local function helpList(type)
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds die     \t \ag Toggles sound on and off for your Deaths\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds hp      \t \ag Toggles sound on and off for Low Health\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds hp 1-100\t \ag Sets PctHPs to toggle low HP sound, 1-100\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds missing     \t \ag Toggles sound on and off for missing groupmembers\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\ay%s Volume Control\ax', Module.Name)
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds hit 0-100\t \ag Sets Volume for hits 0-100 accepts decimal values\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds bonk 0-100\t\ag Sets Volume for bonk 0-100 accepts decimal values\ax')
@@ -199,6 +203,7 @@ local function helpList(type)
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds aa 0-100 \t\ag Sets Volume for AA 0-100 accepts decimal values\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds die 0-100 \t\ag Sets Volume for die 0-100 accepts decimal values\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds volhp 0-100 \t\ag Sets Volume for lowHP 0-100 accepts decimal values\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds missing 0-100\t \ag Sets Volume for missing 0-100 accepts decimal values\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\ay%s Other\ax', Module.Name)
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds help      \t\ag Brings up this list\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds config    \t\ag Opens Config GUI Window\ax')
@@ -292,6 +297,16 @@ local function bind(...)
             playSound(string.format("%s%s/%s", Module.Path, settings.theme, settings.Sounds[settings.theme].soundLowHp.file))
             newSetting = true
         end
+    elseif string.lower(key) == 'missing' then
+        if value ~= nil then
+            settings.volMissing = value or 50
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s Volume to %s", key, tostring(settings.volMissing))
+            playSound(string.format("%s%s/%s", Module.Path, settings.theme, settings.Sounds[settings.theme].soundMissing.file))
+        else
+            settings.doMissing = not settings.doMissing
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s to %s", key, tostring(settings.doMissing))
+        end
+        newSetting = true
     elseif string.lower(key) == 'help' or key == nil then
         helpList('help')
     elseif string.lower(key) == 'show' then
@@ -353,6 +368,7 @@ function Module.RenderGUI()
                     soundAA = { file = "AA.wav", duration = 2, },
                     soundFizzle = { file = 'Fizzle.wav', duration = 1, },
                     soundItem = { file = 'Hit.wav', duration = 2, },
+                    soundMissing = { file = "Missing.wav", duration = 2, },
                 }
             end
             settings.theme = tmpTheme
@@ -376,6 +392,7 @@ function Module.RenderGUI()
             DrawAlertSettings('Alarm', Module.Name, Module.Path, configFile)
             DrawAlertSettings('LowHp', Module.Name, Module.Path, configFile)
             DrawAlertSettings('Item', Module.Name, Module.Path, configFile)
+            DrawAlertSettings('Missing', Module.Name, Module.Path, configFile)
 
             ImGui.EndTable()
         end
@@ -499,6 +516,15 @@ function Module.MainLoop()
             timerB = os.time()
         end
     end
+
+    if mq.TLO.Group.Members() < 5 and mq.TLO.Me.CombatState():lower() == "combat" and settings.doMissing then
+        originalVolume = getVolume()
+        setVolume(settings.volMissing)
+        timerPlay = os.time()
+        soundDuration = settings.Sounds[settings.theme].soundMissing.duration
+        playSound(string.format("%s%s/%s", Module.Path, settings.theme, settings.Sounds[settings.theme].soundMissing.file))
+    end
+
 
     local tnpVol = getVolume()
     if playing == true and timerPlay > 0 then
