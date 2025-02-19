@@ -404,7 +404,7 @@ function Module.RenderGUI()
 
             ImGui.EndTable()
         end
-        local tmpLowHp, tmpPulse = settings.lowHP, settings.Pulse
+        local tmpLowHp, tmpPulse, tmpGroupMember = settings.lowHP, settings.Pulse, settings.groupMembers
         tmpLowHp = ImGui.InputInt('Low HP Threshold##LowHealthThresh', tmpLowHp, 1)
         if tmpLowHp ~= settings.lowHP then
             settings.lowHP = tmpLowHp
@@ -413,6 +413,11 @@ function Module.RenderGUI()
         tmpPulse = ImGui.InputInt('Pulse Delay##LowHealthPulse', tmpPulse, 1)
         if tmpPulse ~= settings.Pulse then
             settings.Pulse = tmpPulse
+        end
+
+        tmpGroupMember = ImGui.InputInt('Group Members (Not Yourself)##GroupMembers', tmpGroupMember, 1)
+        if tmpGroupMember ~= settings.groupMembers then
+            settings.groupMembers = tmpGroupMember
         end
 
         if settings.doItem then
