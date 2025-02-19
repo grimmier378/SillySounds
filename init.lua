@@ -65,6 +65,7 @@ defaults = {
     volHP = 20,
     volMissing = 50,
     lowHP = 50,
+    groupMembers = 5,
     theme = 'default',
     Pulse = 1,
     ItemWatch = '',
@@ -195,6 +196,7 @@ local function helpList(type)
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds hp      \t \ag Toggles sound on and off for Low Health\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds hp 1-100\t \ag Sets PctHPs to toggle low HP sound, 1-100\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds missing     \t \ag Toggles sound on and off for missing groupmembers\ax')
+        MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds group 1-5\t \ag Sets the number of members in group with you, 1-5\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\ay%s Volume Control\ax', Module.Name)
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds hit 0-100\t \ag Sets Volume for hits 0-100 accepts decimal values\ax')
         MyUI_Utils.PrintOutput('MyUI', nil, '\at /sillysounds bonk 0-100\t\ag Sets Volume for bonk 0-100 accepts decimal values\ax')
@@ -307,6 +309,12 @@ local function bind(...)
             MyUI_Utils.PrintOutput('MyUI', nil, "setting %s to %s", key, tostring(settings.doMissing))
         end
         newSetting = true
+    elseif string.lower(key) == 'group' then
+        if value ~= nil then
+            settings.groupMembers = value or 5
+            MyUI_Utils.PrintOutput('MyUI', nil, "setting %s to %d", key, tostring(settings.groupMembers))
+            newSetting = true
+        end
     elseif string.lower(key) == 'help' or key == nil then
         helpList('help')
     elseif string.lower(key) == 'show' then
@@ -517,7 +525,7 @@ function Module.MainLoop()
         end
     end
 
-    if mq.TLO.Group.Members() < 5 and mq.TLO.Me.CombatState():lower() == "combat" and settings.doMissing then
+    if mq.TLO.Group.Members() < settings.groupMembers and mq.TLO.Me.CombatState():lower() == "combat" and settings.doMissing then
         originalVolume = getVolume()
         setVolume(settings.volMissing)
         timerPlay = os.time()
